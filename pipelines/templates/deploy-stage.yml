@@ -1,0 +1,91 @@
+# One environment = one stage with a What-if job followed by an approval-gated Deploy job.
+parameters:
+  - name: environment
+    type: string
+  - name: dependsOn
+    type: object
+    default: []
+  - name: condition
+    type: string
+    default: succeeded()
+  - name: serviceConnection
+    type: string
+  - name: adoEnvironment
+    type: string
+  - name: resourceGroupName
+    type: string
+  - name: location
+    type: string
+  - name: vmFilter
+    type: string
+    default: '*'
+  - name: vmImage
+    type: string
+    default: ubuntu-latest
+
+stages:
+  - stage: Deploy_${{ parameters.environment }}
+    displayName: Deploy ${{ parameters.environment }}
+    dependsOn: ${{ parameters.dependsOn }}
+    condition: ${{ parameters.condition }}
+    jobs:
+      - job: Plan
+        displayName: What-if (${{ parameters.environment }})
+        pool:
+          vmImage: ${{ parameters.vmImage }}
+        steps:
+          - checkout: none
+
+          - download: current
+            artifact: drop
+
+          - task: AzurePowerShell@5
+            displayName: What-if ${{ parameters.environment }}
+            inputs:
+              azureSubscription: ${{ parameters.serviceConnection }}
+              ScriptType: FilePath
+              ScriptPath: $(Pipeline.Workspace)/drop/scripts/Invoke-Deployment.ps1
+              ScriptArguments: >-
+                -Environment '${{ parameters.environment }}'
+                -ResourceGroupName '${{ parameters.resourceGroupName }}'
+                -Location '${{ parameters.location }}'
+                -ArtifactPath '$(Pipeline.Workspace)/drop'
+                -VmFilter $env:VMPROV_VM_FILTER
+                -Mode WhatIf
+              azurePowerShellVersion: LatestVersion
+              pwsh: true
+            env:
+              # Passed via environment (not interpolated into the script) to prevent injection.
+              VMPROV_VM_FILTER: ${{ parameters.vmFilter }}
+
+      - deployment: Deploy
+        displayName: Deploy (${{ parameters.environment }})
+        dependsOn: Plan
+        pool:
+          vmImage: ${{ parameters.vmImage }}
+        # Approvals, branch control and business hours are configured on this environment.
+        environment: ${{ parameters.adoEnvironment }}
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - download: current
+                  artifact: drop
+
+                - task: AzurePowerShell@5
+                  displayName: Deploy ${{ parameters.environment }}
+                  inputs:
+                    azureSubscription: ${{ parameters.serviceConnection }}
+                    ScriptType: FilePath
+                    ScriptPath: $(Pipeline.Workspace)/drop/scripts/Invoke-Deployment.ps1
+                    ScriptArguments: >-
+                      -Environment '${{ parameters.environment }}'
+                      -ResourceGroupName '${{ parameters.resourceGroupName }}'
+                      -Location '${{ parameters.location }}'
+                      -ArtifactPath '$(Pipeline.Workspace)/drop'
+                      -VmFilter $env:VMPROV_VM_FILTER
+                      -Mode Deploy
+                    azurePowerShellVersion: LatestVersion
+                    pwsh: true
+                  env:
+                    VMPROV_VM_FILTER: ${{ parameters.vmFilter }}

@@ -23,7 +23,7 @@ BeforeAll {
         [System.Net.NetworkCredential]::new('', $Value).Password
     }
 
-    function New-TestParameterFile {
+    function Write-TestParameterFile {
         param([hashtable]$Values)
         $parameters = @{}
         foreach ($k in $Values.Keys) { $parameters[$k] = @{ value = $Values[$k] } }
@@ -169,7 +169,7 @@ Describe 'Initialize-EntraLoginGroup' {
 
 Describe 'Read-DeploymentParameterFile' {
     It 'returns parameter values as a hashtable' {
-        $p = Read-DeploymentParameterFile -Path (New-TestParameterFile @{ vmName = 'vm1'; tags = @{ a = 'b' } })
+        $p = Read-DeploymentParameterFile -Path (Write-TestParameterFile @{ vmName = 'vm1'; tags = @{ a = 'b' } })
         $p.vmName | Should -Be 'vm1'
         $p.tags.a | Should -Be 'b'
     }
@@ -206,7 +206,7 @@ Describe 'Invoke-VmDeployment' {
 
     Context 'EntraID' {
         BeforeAll {
-            $script:EntraFile = New-TestParameterFile @{
+            $script:EntraFile = Write-TestParameterFile @{
                 vmName = 'vmweb01'; joinType = 'EntraID'; keyVaultName = 'kv-test'
                 entraAdminGroupObjectIds = @('existing-admin')
             }
@@ -242,13 +242,13 @@ Describe 'Invoke-VmDeployment' {
 
     Context 'ActiveDirectory' {
         It 'requires the domain parameters' {
-            $file = New-TestParameterFile @{ vmName = 'vmapp01'; joinType = 'ActiveDirectory'; keyVaultName = 'kv-test' }
+            $file = Write-TestParameterFile @{ vmName = 'vmapp01'; joinType = 'ActiveDirectory'; keyVaultName = 'kv-test' }
             { Invoke-VmDeployment -ResourceGroupName 'rg' -TemplateFile $Template -ParameterFile $file } | Should -Throw '*domainFqdn*'
         }
 
         It 'fails fast when the domain join secret is missing' {
             Mock -ModuleName VmProvisioning Get-AzKeyVaultSecret { $null } -ParameterFilter { $Name -eq 'domain-join-password' }
-            $file = New-TestParameterFile @{
+            $file = Write-TestParameterFile @{
                 vmName = 'vmapp01'; joinType = 'ActiveDirectory'; keyVaultName = 'kv-test'
                 domainFqdn = 'corp.contoso.com'; domainJoinOuPath = 'OU=S,DC=corp,DC=contoso,DC=com'; domainJoinUserName = 'svc@corp.contoso.com'
             }
@@ -258,7 +258,7 @@ Describe 'Invoke-VmDeployment' {
         }
 
         It 'deploys without touching Entra ID' {
-            $file = New-TestParameterFile @{
+            $file = Write-TestParameterFile @{
                 vmName = 'vmapp01'; joinType = 'ActiveDirectory'; keyVaultName = 'kv-test'
                 domainFqdn = 'corp.contoso.com'; domainJoinOuPath = 'OU=S,DC=corp,DC=contoso,DC=com'; domainJoinUserName = 'svc@corp.contoso.com'
             }
@@ -271,7 +271,7 @@ Describe 'Invoke-VmDeployment' {
     }
 
     It 'rejects parameter files without a Key Vault' {
-        $file = New-TestParameterFile @{ vmName = 'vm1'; joinType = 'EntraID' }
+        $file = Write-TestParameterFile @{ vmName = 'vm1'; joinType = 'EntraID' }
         { Invoke-VmDeployment -ResourceGroupName 'rg' -TemplateFile $Template -ParameterFile $file } | Should -Throw '*keyVaultName*'
     }
 }

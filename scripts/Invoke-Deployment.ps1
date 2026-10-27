@@ -33,6 +33,7 @@ param(
     [string]$ArtifactPath = (Join-Path $PSScriptRoot '..' 'out'),
 
     # Wildcard filter on VM parameter file names (without extension).
+    [ValidatePattern('^[A-Za-z0-9*?_-]{1,64}$')]
     [string]$VmFilter = '*'
 )
 
