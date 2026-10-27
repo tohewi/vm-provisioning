@@ -85,8 +85,21 @@ Describe 'Pipeline structure' {
     It 'gates deployments with an Azure DevOps environment after a what-if job' {
         $Stage | Should -Match 'deployment:\s*Deploy'
         $Stage | Should -Match 'environment:\s*\$\{\{\s*parameters\.adoEnvironment\s*\}\}'
-        $Stage | Should -Match 'dependsOn:\s*Plan'
         $Stage | Should -Match '-Mode WhatIf'
+    }
+
+    It 'runs the what-if in its own stage, before the approval-gated deploy stage' {
+        # ADO evaluates approvals for all protected resources of a stage before it starts,
+        # so a what-if in the same stage as the environment would only run after approval.
+        $stages = $Stage -split '(?m)^\s*- stage:' | Select-Object -Skip 1
+        $stages.Count | Should -Be 2
+        $plan = $stages | Where-Object { $_ -match '-Mode WhatIf' }
+        $deploy = $stages | Where-Object { $_ -match '-Mode Deploy' }
+        $plan | Should -Match '^\s*Plan_'
+        $plan | Should -Not -Match 'environment:'
+        $deploy | Should -Match '^\s*Deploy_'
+        $deploy | Should -Match 'environment:'
+        $deploy | Should -Match 'dependsOn:\s*Plan_\$\{\{\s*parameters\.environment\s*\}\}'
     }
 }
 

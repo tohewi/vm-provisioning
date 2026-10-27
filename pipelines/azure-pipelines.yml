@@ -1,11 +1,11 @@
 # Multi-stage Azure DevOps pipeline for the GitHub repository.
 #
-#   Validate ──► Deploy_dev (What-if job ─► Deploy job [env approval]) ──► Deploy_prod (same)
+#   Validate ──► Plan_dev (what-if) ──► Deploy_dev [env approval] ──► Plan_prod ──► Deploy_prod [env approval]
 #
 # * PRs (GitHub PR validation through the Azure Pipelines GitHub App) only run Validate.
 # * Each environment uses its own workload-identity-federated service connection and an
-#   Azure DevOps Environment that carries approvals/checks. The what-if output is in the
-#   Plan job log so approvers can review it before approving the Deploy job.
+#   Azure DevOps Environment that carries approvals/checks. The what-if runs in a
+#   separate Plan_<env> stage, so approvers can review its log before approving Deploy_<env>.
 # * No secret ever flows through pipeline variables: the local admin password is generated
 #   in-process into Key Vault and the templates read secrets with getSecret().
 #

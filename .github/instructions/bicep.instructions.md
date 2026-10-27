@@ -6,7 +6,9 @@ applyTo: "**/*.bicep,**/*.bicepparam,bicepconfig.json"
 
 - Templates live in `infra/`; one concern per module in `infra/modules/`.
 - Every `param` has `@description`. Secrets are `@secure()` and only ever filled from
-  `keyVault.getSecret('<name>')` in `infra/main.bicep` — never from a parameter file.
+  `keyVault.getSecret('<name>')` on an `existing` vault (in `infra/main.bicep`, or for mode-specific
+  secrets inside the mode-specific module such as `activeDirectory.bicep`, so a conditional deployment
+  never references a secret it does not use) — never from a parameter file.
 - Pass secrets to VMs only through extension `protectedSettings` or Run Command `protectedParameters`.
   Never put a secret in `settings`, `parameters`, `commandToExecute`, tags or outputs.
 - Parameters that hold Key Vault *names* of secrets end with `SecretName`; no other parameter

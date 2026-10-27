@@ -14,7 +14,7 @@ whose source is this **GitHub** repo. Requirements: `ralph/specs/vm-provisioning
 | Path | Purpose |
 | --- | --- |
 | `infra/main.bicep` | Entry template (resource group scope). Reads secrets from Key Vault with `getSecret()`. |
-| `infra/modules/*.bicep` | `windowsVm`, `domainJoin`, `adLoginGroups` (Run Command), `entraJoin` (+ RBAC). |
+| `infra/modules/*.bicep` | `windowsVm`, `activeDirectory` (AD-only wrapper that reads the join secret and calls `domainJoin` + `adLoginGroups` Run Command), `entraJoin` (+ RBAC). |
 | `infra/scripts/*.ps1` | Scripts that run **on the VM** (Windows PowerShell 5.1), embedded with `loadTextContent()`. |
 | `infra/parameters/<env>/<vm>.bicepparam` | One file per VM. No secrets. |
 | `src/VmProvisioning/` | PowerShell 7 module used by the pipeline. |

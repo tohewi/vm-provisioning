@@ -154,8 +154,10 @@ module vm 'modules/windowsVm.bicep' = {
   }
 }
 
-module domainJoin 'modules/domainJoin.bicep' = if (isActiveDirectory) {
-  name: '${deployment().name}-domainjoin'
+// The domain join password is resolved inside the AD-only module (not here), so Entra ID
+// deployments never reference the domain join secret.
+module activeDirectory 'modules/activeDirectory.bicep' = if (isActiveDirectory) {
+  name: '${deployment().name}-ad'
   dependsOn: [
     vm
   ]
@@ -165,25 +167,14 @@ module domainJoin 'modules/domainJoin.bicep' = if (isActiveDirectory) {
     domainFqdn: domainFqdn
     ouPath: domainJoinOuPath
     domainJoinUserName: domainJoinUserName
-    domainJoinPassword: keyVault.getSecret(domainJoinPasswordSecretName)
-    tags: tags
-  }
-}
-
-module adLoginGroups 'modules/adLoginGroups.bicep' = if (isActiveDirectory) {
-  name: '${deployment().name}-adlogingroups'
-  dependsOn: [
-    domainJoin
-  ]
-  params: {
-    vmName: vmName
-    location: location
+    keyVaultName: keyVaultName
+    keyVaultResourceGroupName: keyVaultResourceGroupName
+    keyVaultSubscriptionId: keyVaultSubscriptionId
+    domainJoinPasswordSecretName: domainJoinPasswordSecretName
     groupsOuPath: adGroupsOuPath
     adminGroupName: adminGroupName
     userGroupName: userGroupName
     createGroups: createAdLoginGroups
-    domainUserName: domainJoinUserName
-    domainPassword: keyVault.getSecret(domainJoinPasswordSecretName)
     tags: tags
   }
 }

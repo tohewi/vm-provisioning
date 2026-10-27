@@ -10,8 +10,8 @@ GitHub repo ──(Azure Pipelines GitHub App)──► Azure DevOps pipeline
                                                │
   Validate: PSScriptAnalyzer, bicep lint/build, Pester  ──► artifact "drop"
                                                │
-  Deploy_dev:  What-if job ──► [approval on environment] ──► Deploy job
-  Deploy_prod: What-if job ──► [approval on environment] ──► Deploy job   (main only)
+  Plan_dev  (what-if) ──► Deploy_dev  [approval on environment]
+  Plan_prod (what-if) ──► Deploy_prod [approval on environment]   (main only)
                                                │
                     per VM (.bicepparam):      ▼
   1. Local admin password generated in-process ──► Key Vault secret <vm>-localadmin
@@ -78,7 +78,8 @@ These are assumed to exist; this repository does not create them.
    federation** (no client secret) named `sc-vmprov-dev` and `sc-vmprov-prod`, and grant the permissions above.
    Add a *Branch control* check on `sc-vmprov-prod` allowing only `refs/heads/main`.
 3. **Environments**: create `vm-provisioning-dev` and `vm-provisioning-prod`; add **Approvals** (at least on
-   prod). Approvers review the *What-if* job log of the same stage before approving.
+   prod). Approvers review the log of the preceding `Plan_<env>` (what-if) stage before
+   approving. The what-if is a separate stage on purpose: Azure DevOps evaluates approvals before a stage starts.
 4. **Adjust** service connection names, resource groups and regions in `pipelines/azure-pipelines.yml`.
 5. **GitHub branch protection** on `main`: require the Azure Pipelines check, require PR reviews.
 

@@ -14,12 +14,22 @@ BeforeAll {
     if ($LASTEXITCODE -ne 0) { throw 'main.bicep failed to compile.' }
     $script:Template = ($json -join "`n") | ConvertFrom-Json -AsHashtable
 
-    function Get-NestedResource {
-        param([string]$Module, [string]$Type)
-        $nested = $script:Template.resources[$Module].properties.template.resources
+    function Get-TemplateResource {
+        param($Deployment, [string]$Type)
+        $nested = $Deployment.properties.template.resources
         $items = if ($nested -is [System.Collections.IDictionary]) { $nested.Values } else { $nested }
         @($items | Where-Object { $_.type -eq $Type })
     }
+
+    function Get-NestedResource {
+        param([string]$Module, [string]$Type)
+        Get-TemplateResource -Deployment $script:Template.resources[$Module] -Type $Type
+    }
+
+    # Inner deployments of the AD wrapper module, keyed by the module file they deploy.
+    $adInner = Get-NestedResource -Module 'activeDirectory' -Type 'Microsoft.Resources/deployments'
+    $script:AdDomainJoin = $adInner | Where-Object { $_.properties.parameters.ContainsKey('domainJoinPassword') }
+    $script:AdLoginGroups = $adInner | Where-Object { $_.properties.parameters.ContainsKey('domainPassword') }
 }
 
 Describe 'main.bicep' {
@@ -44,14 +54,20 @@ Describe 'main.bicep' {
         $Template.resources.vm.properties.template.parameters.adminPassword.type | Should -Be 'securestring'
     }
 
-    It 'passes the domain join password as a Key Vault reference' {
-        $Template.resources.domainJoin.properties.parameters.domainJoinPassword.reference.keyVault | Should -Not -BeNullOrEmpty
-        $Template.resources.adLoginGroups.properties.parameters.domainPassword.reference.keyVault | Should -Not -BeNullOrEmpty
+    It 'passes the domain join password as a Key Vault reference inside the AD-only module' {
+        $AdDomainJoin.properties.parameters.domainJoinPassword.reference.keyVault | Should -Not -BeNullOrEmpty
+        $AdLoginGroups.properties.parameters.domainPassword.reference.keyVault | Should -Not -BeNullOrEmpty
+    }
+
+    It 'references the domain join secret only from the AD module (Entra deployments never resolve it)' {
+        foreach ($name in $Template.resources.Keys | Where-Object { $_ -ne 'activeDirectory' }) {
+            ($Template.resources[$name] | ConvertTo-Json -Depth 50) | Should -Not -Match 'domainJoinPasswordSecretName' -Because $name
+        }
+        $Template.resources.activeDirectory.properties.parameters.domainJoinPasswordSecretName | Should -Not -BeNullOrEmpty
     }
 
     It 'only deploys AD resources for ActiveDirectory and Entra resources for EntraID' {
-        $Template.resources.domainJoin.condition | Should -Match 'ActiveDirectory'
-        $Template.resources.adLoginGroups.condition | Should -Match 'ActiveDirectory'
+        $Template.resources.activeDirectory.condition | Should -Match 'ActiveDirectory'
         $Template.resources.entraJoin.condition | Should -Match 'EntraID'
     }
 
@@ -85,8 +101,12 @@ Describe 'windowsVm module' {
 }
 
 Describe 'domainJoin module' {
+    It 'creates login groups only after the domain join' {
+        $AdLoginGroups.dependsOn | Should -Not -BeNullOrEmpty
+    }
+
     It 'sends the password only in protectedSettings' {
-        $ext = Get-NestedResource -Module 'domainJoin' -Type 'Microsoft.Compute/virtualMachines/extensions'
+        $ext = Get-TemplateResource -Deployment $AdDomainJoin -Type 'Microsoft.Compute/virtualMachines/extensions'
         $ext.properties.type | Should -Be 'JsonADDomainExtension'
         $ext.properties.protectedSettings.Password | Should -Not -BeNullOrEmpty
         $ext.properties.settings.Keys | Should -Not -Contain 'Password'
@@ -96,7 +116,7 @@ Describe 'domainJoin module' {
 
 Describe 'adLoginGroups module' {
     BeforeAll {
-        $script:RunCommand = Get-NestedResource -Module 'adLoginGroups' -Type 'Microsoft.Compute/virtualMachines/runCommands'
+        $script:RunCommand = Get-TemplateResource -Deployment $AdLoginGroups -Type 'Microsoft.Compute/virtualMachines/runCommands'
         $ast = [System.Management.Automation.Language.Parser]::ParseFile(
             (Join-Path $InfraPath 'scripts' 'Set-AdLoginGroups.ps1'), [ref]$null, [ref]$null)
         $script:ScriptParams = $ast.ParamBlock.Parameters.Name.VariablePath.UserPath
