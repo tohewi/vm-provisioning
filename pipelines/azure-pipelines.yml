@@ -1,0 +1,98 @@
+# Multi-stage Azure DevOps pipeline for the GitHub repository.
+#
+#   Validate ──► Plan_dev (what-if) ──► Deploy_dev [env approval] ──► Plan_prod ──► Deploy_prod [env approval]
+#
+# * PRs (GitHub PR validation through the Azure Pipelines GitHub App) only run Validate.
+# * Each environment uses its own workload-identity-federated service connection and an
+#   Azure DevOps Environment that carries approvals/checks. The what-if runs in a
+#   separate Plan_<env> stage, so approvers can review its log before approving Deploy_<env>.
+# * No secret ever flows through pipeline variables: the local admin password is generated
+#   in-process into Key Vault and the templates read secrets with getSecret().
+#
+# See README.md ("Azure DevOps setup") for the one-time configuration.
+
+name: $(Date:yyyyMMdd)$(Rev:.r)
+
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - infra
+      - src
+      - scripts
+      - pipelines
+      - tests
+      - build.ps1
+      - bicepconfig.json
+      - PSScriptAnalyzerSettings.psd1
+
+pr:
+  branches:
+    include:
+      - main
+
+parameters:
+  - name: vmFilter
+    displayName: VM parameter files to process (wildcard on file name, e.g. vmdevapp*)
+    type: string
+    default: '*'
+  - name: deployProd
+    displayName: Continue to production after dev
+    type: boolean
+    default: true
+
+variables:
+  # Never enable diagnostics on deployment runs: it increases the log surface.
+  - name: System.Debug
+    value: false
+
+stages:
+  - stage: Validate
+    displayName: Validate (lint, build, test)
+    jobs:
+      - job: Build
+        pool:
+          vmImage: ubuntu-latest
+        steps:
+          - checkout: self
+            fetchDepth: 1
+
+          - pwsh: ./build.ps1 -Task All
+            displayName: build.ps1 (Lint, Build, Test)
+
+          - task: PublishTestResults@2
+            displayName: Publish Pester results
+            condition: succeededOrFailed()
+            inputs:
+              testResultsFormat: NUnit
+              testResultsFiles: out/test-results.xml
+              failTaskOnFailedTests: true
+
+          - publish: out
+            artifact: drop
+            displayName: Publish deployment artifact
+
+  - template: templates/deploy-stage.yml
+    parameters:
+      environment: dev
+      dependsOn: [Validate]
+      condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'))
+      serviceConnection: sc-vmprov-dev
+      adoEnvironment: vm-provisioning-dev
+      resourceGroupName: rg-vmprov-dev
+      location: westeurope
+      vmFilter: ${{ parameters.vmFilter }}
+
+  - ${{ if eq(parameters.deployProd, true) }}:
+      - template: templates/deploy-stage.yml
+        parameters:
+          environment: prod
+          dependsOn: [Deploy_dev]
+          condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'), ne(variables['Build.Reason'], 'PullRequest'))
+          serviceConnection: sc-vmprov-prod
+          adoEnvironment: vm-provisioning-prod
+          resourceGroupName: rg-vmprov-prod
+          location: westeurope
+          vmFilter: ${{ parameters.vmFilter }}
